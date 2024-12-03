@@ -1,13 +1,13 @@
 # Gateway
 
-You can use the Gateway to supplement Moveworks' native integrations. Read more here: https://developer.moveworks.com/gateway/overview/
+You can use the Gateway to create new Moveworks content integrations. Read more here: https://developer.moveworks.com/gateway/overview/
 
-Find sample starter code for Content Gateway under `/starter-code/content_gateway_sample.py`.
+## Starter Code Features
 
-Gateway Features:
-• Sample Flask (Python) application to return pdf files.
-• It returns content with No-Auth but has sample implementations for OAuth 2.0 Bearer and Basic Auths.
-• Supports pagination for returning thousands of files.
-• Contains sample legacy forms gateway implementation.
+- Sample Flask (Python) application to return pdf files.
+- Returns content with No-Auth but contains sample implementations for OAuth 2.0 Bearer and Basic Authentications.
+- Pagination for returning thousands of files.
+- Sample legacy forms gateway implementation.
 
-For additional support, contact Moveworks professional services.
+
+For additional support, contact [Moveworks professional services](https://developer.moveworks.com/creator-studio/troubleshooting/support).
