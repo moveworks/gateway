@@ -199,7 +199,7 @@ PUBLIC_KEY = """-----BEGIN PUBLIC KEY-----
 
 
 def make_error(http_code: str, code: str, message: str) -> dict:
-    return make_response({"error": {"code": code, "message": message}}, http_code)
+    return make_response(jsonify({"error": {"code": code, "message": message}}), http_code)
 
 
 def validate_auth() -> str:
@@ -240,7 +240,8 @@ def get_form(form_id: str):
         return make_error(401, "AUTHENTICATION_FAILED", err_msg)
 
     try:
-        return FORM_LIB[form_id]["form"]
+        form_data = FORM_LIB[form_id]["form"]
+        return jsonify(form_data)
     except KeyError:
         return make_error(404, "NOT_FOUND", f"Form ID {form_id} does not exist.")
 
