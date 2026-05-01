@@ -13,6 +13,7 @@ A ready-to-run Python server for connecting a content source to Moveworks Enterp
 | File | Purpose |
 |---|---|
 | `content_gateway.py` | Demo server and integration starting point — run it immediately, then edit to connect your source |
+| `validate.py` | Schema validator — run against any live server to confirm your responses conform to the Content Gateway API |
 | `requirements.txt` | Python dependencies |
 | `.env.example` | Template for the environment variables you'll need to set |
 | `openapi.json` | Full Content Gateway API spec |
@@ -48,7 +49,13 @@ Start the demo server with your key:
 GATEWAY_API_KEY=<your-key> python content_gateway.py
 ```
 
-The server starts on port 5001 and returns built-in sample data (Acme IT Knowledge Portal). Expose it over HTTPS (see [Deployment](#deployment)), configure the connector in Moveworks Setup, and trigger an initial sync to confirm Moveworks can reach it.
+The server starts on port 5001 and returns built-in sample data (Acme IT Knowledge Portal). Validate that all endpoints are responding correctly before connecting Moveworks:
+
+```bash
+GATEWAY_API_KEY=<your-key> python validate.py --rebac
+```
+
+Once all checks pass, expose the server over HTTPS (see [Deployment](#deployment)) and follow the [Connecting Your Gateway to Moveworks](https://docs.moveworks.com/api-reference/content-gateway/moveworks-setup) guide to configure the connector.
 
 ## Step 2 — Connect your source system
 
@@ -75,16 +82,28 @@ export $(cat .env | xargs)
 python content_gateway.py
 ```
 
+Before connecting to Moveworks, validate that your real source is returning the correct schema:
+
+```bash
+# Files only — if using Public to all permission strategy
+python validate.py
+
+# Full validation — if using ReBAC permission strategy
+python validate.py --rebac
+```
+
+See the [Verifying Your Build](https://docs.moveworks.com/api-reference/content-gateway/verifying-your-build) guide for a full explanation of what the validator checks and how to fix common failures.
+
 ## Step 3 — Connect to Moveworks
 
 Once your server is deployed and reachable over HTTPS:
 
-1. In **Moveworks Setup**, go to **Enterprise Search > Content Gateway**
-2. Click **Add Gateway** and enter your gateway's public base URL
-3. Set authentication to **API Key** and paste your `GATEWAY_API_KEY` value
+1. In **Moveworks Setup**, navigate to **Core Platform > Connectors > Built-in Connectors** and select **Content Gateway System**
+2. Enter your gateway's public base URL, set authentication to **API Key**, and paste your `GATEWAY_API_KEY` value
+3. Navigate to **Enterprise Search > Configure Search > Classic Ingestion > Files** and click **Create** to configure the ingestion
 4. Save and trigger an initial sync
-5. Go to **Enterprise Search > Resource Permissions**, select your connector, and set the permission model to **ReBAC**
-6. Go to **User Identity**, add your Content Gateway as an identity source, and trigger a sync
+5. Navigate to **Enterprise Search > Resource Permissions > Permission Rules**, click **Create**, and configure your permission strategy (ReBAC or Public)
+6. If using ReBAC, go to **User Identity**, add your Content Gateway as an identity source, and trigger a sync
 
 ## Deployment
 
