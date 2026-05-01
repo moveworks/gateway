@@ -1,0 +1,1449 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Content Gateway",
+    "description": "Content Gateway is an extensible approach to integrating custom content systems with Moveworks’ Copilot Search.\n\nThis includes the following features:\n- **Minimal infrastructure**. Just bring your APIs. No job scheduling, indexing, caching, storage, etc.\n- **Simplified traversal**: Moveworks manages traversal logic (pagination / nested structures)\n- **Multiple MIME types**: Supports HTML, PDF, DOCx, PPTx and TXT [mime types](https://developer.mozilla.org/en-US/docs/Web/HTTP/MIME_types/Common_types)\n- **Support many systems**: Build & configure as many content gateway connectors as needed\n",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "https://content-gateway-example.com/v1"
+    }
+  ],
+  "paths": {
+    "/files": {
+      "get": {
+        "summary": "List files",
+        "description": "Retrieve files in a specific node, providing features like querying, filtering, and detailed navigational information including parent folder details and direct download URLs.\n",
+        "parameters": [
+          {
+            "name": "$filter",
+            "in": "query",
+            "description": "Filter content items by a condition.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "$select",
+            "in": "query",
+            "description": "Select which properties to include in the response for the content items.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "$orderby",
+            "in": "query",
+            "description": "Order content items by specific fields.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "$top",
+            "in": "query",
+            "description": "Specify the number of content results to return.",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "$skip",
+            "in": "query",
+            "description": "Skip the first n content results.",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successfully retrieved list of content items with enhanced information.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ODataContentResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request - The request could not be understood due to malformed syntax.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - Authentication is required and has failed or has not yet been provided.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden - Server understood the request but refuses to authorize it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found - The requested resource could not be found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests - Rate limit exceeded.",
+            "headers": {
+              "Retry-After": {
+                "description": "The number of seconds to wait before retrying the request.",
+                "schema": {
+                  "type": "integer"
+                },
+                "required": false
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/files/{id}": {
+      "get": {
+        "summary": "Get file metadata and HTML content body",
+        "description": "Retrieves metadata and content for a specific file. When the content type is HTML (mime_type: text/html), this endpoint returns the actual HTML content in the response body. For other file types, it provides download path information.\n",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Unique identifier for the content item."
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successfully retrieved metadata of content",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ODataContentMetadataResponse"
+                },
+                "examples": {
+                  "file_with_download_path": {
+                    "summary": "File with download path",
+                    "value": {
+                      "@odata.context": "https://content-gateway-example.com/v1/$metadata#Content",
+                      "value": {
+                        "id": "67890",
+                        "name": "Annual Report.pdf",
+                        "external_url": "https://intranet.example.com/reports/annual-2023",
+                        "last_modified_datetime": "2023-04-17T12:34:56Z",
+                        "content": {
+                          "download_path": "/67890/download",
+                          "mime_type": "application/pdf",
+                          "size": 1024000,
+                          "sha1_hash": "2fd4e1c67a2d28fced849ee1bb76e7391b93eb12"
+                        }
+                      }
+                    }
+                  },
+                  "html_content": {
+                    "summary": "HTML content with body",
+                    "value": {
+                      "@odata.context": "https://content-gateway-example.com/v1/$metadata#Content",
+                      "value": {
+                        "id": "12345",
+                        "name": "Company Policy.html",
+                        "external_url": "https://intranet.example.com/policies/company-policy",
+                        "last_modified_datetime": "2023-04-17T12:34:56Z",
+                        "content": {
+                          "body": "<html><head><title>Company Policy</title></head><body><h1>Employee Guidelines</h1><p>Please follow these guidelines...</p></body></html>",
+                          "mime_type": "text/html",
+                          "size": 2048
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request - The request could not be understood by the server due to malformed syntax.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - Authentication is required and has failed or has not yet been provided.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden - Server understood the request but refuses to authorize it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found - The requested file could not be found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests - Rate limit exceeded.",
+            "headers": {
+              "Retry-After": {
+                "description": "The number of seconds to wait before retrying the request.",
+                "schema": {
+                  "type": "integer"
+                },
+                "required": false
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error - The server encountered an unexpected condition that prevented it from fulfilling the request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/files/{id}/download": {
+      "get": {
+        "summary": "Download file",
+        "description": "Retrieves and downloads the entire media file based on the specified file ID.\n\nThe response body is the raw binary content of the file. Treat the response body as a byte stream and write it directly to disk or pass it to a file handler.\n\nThe `Content-Type` response header indicates the MIME type of the file (e.g. `application/pdf`, `text/html`). Use this to determine how to handle or display the file.\n\nThe `Checksum-SHA256` response header provides a SHA-256 hash of the file contents. Verify this value against the downloaded bytes to confirm the file was not corrupted in transit.\n",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Unique identifier for the file to download."
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successfully retrieved the file. The response body is the raw binary content of the file.",
+            "headers": {
+              "Content-Type": {
+                "schema": {
+                  "type": "string",
+                  "description": "The MIME type of the file being returned (e.g. `application/pdf`, `text/html`). Use this to determine how to handle or display the downloaded content.",
+                  "example": "application/pdf"
+                }
+              },
+              "Content-Length": {
+                "schema": {
+                  "type": "integer",
+                  "description": "The size of the file in bytes."
+                }
+              },
+              "Checksum-SHA256": {
+                "schema": {
+                  "type": "string",
+                  "description": "A SHA-256 hash of the file contents. Verify this value against the downloaded bytes to confirm the file was not corrupted in transit.",
+                  "example": "d7a8fbb307d4c672a8f3ddf3dbf832b734482ea9c18496351ed3cc631d446b9e"
+                }
+              }
+            },
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request - The request could not be understood by the server due to malformed syntax.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - Authentication is required and has failed or has not yet been provided.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden - Server understood the request but refuses to authorize it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found - The requested file could not be found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests - Rate limit exceeded.",
+            "headers": {
+              "Retry-After": {
+                "description": "The number of seconds to wait before retrying the request.",
+                "schema": {
+                  "type": "integer"
+                },
+                "required": false
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error - The server encountered an unexpected condition that prevented it from fulfilling the request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/users": {
+      "get": {
+        "summary": "List users",
+        "description": "Retrieve a paginated list of users using OData parameters.",
+        "parameters": [
+          {
+            "name": "$top",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Number of items to return per page (default pagination)"
+          },
+          {
+            "name": "$skip",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Number of items to skip (default pagination offset)"
+          },
+          {
+            "name": "$skiptoken",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Used when the query parameters can be memoized into an encoded string containing filtering and pagination parameters. If the endpoint supports memoized paging, the first call can use $top and $skip, while @odata.nextLink will return with $skiptoken. If memoized querying is not supported, $top and $skip should be sufficient."
+          },
+          {
+            "name": "$filter",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "$select",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "$orderby",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User list response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserCollection"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request - The request was invalid or cannot be served.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - The request requires user authentication.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden - The server understood the request but refuses to authorize it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found - The requested resource could not be found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests - Rate limit exceeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error - The server encountered an unexpected condition.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable - The server is currently unable to handle the request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/groups": {
+      "get": {
+        "summary": "List groups",
+        "description": "Retrieve a paginated list of groups using OData parameters.",
+        "parameters": [
+          {
+            "name": "$top",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Number of items to return per page (default pagination)"
+          },
+          {
+            "name": "$skip",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Number of items to skip (default pagination offset)"
+          },
+          {
+            "name": "$skiptoken",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Used when the query parameters can be memoized into an encoded string containing filtering and pagination parameters. If the endpoint supports memoized paging, the first call can use $top and $skip, while @odata.nextLink will return with $skiptoken. If memoized querying is not supported, $top and $skip should be sufficient."
+          },
+          {
+            "name": "$filter",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "$select",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "$orderby",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Group list response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GroupCollection"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request - The request was invalid or cannot be served.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - The request requires user authentication.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden - The server understood the request but refuses to authorize it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found - The requested resource could not be found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests - Rate limit exceeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error - The server encountered an unexpected condition.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable - The server is currently unable to handle the request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/groups/{groupId}/members": {
+      "get": {
+        "summary": "List group members",
+        "description": "List direct members (users or groups) of a group. No recursion supported.",
+        "parameters": [
+          {
+            "name": "groupId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "$top",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Number of items to return per page (default pagination)"
+          },
+          {
+            "name": "$skiptoken",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Used when the query parameters can be memoized into an encoded string containing filtering and pagination parameters. If the endpoint supports memoized paging, the first call can use $top and $skip, while @odata.nextLink will return with $skiptoken. If memoized querying is not supported, $top and $skip should be sufficient."
+          },
+          {
+            "name": "$filter",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "$select",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Group members list response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GroupMemberCollection"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request - The request was invalid or cannot be served.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - The request requires user authentication.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden - The server understood the request but refuses to authorize it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found - The requested resource could not be found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests - Rate limit exceeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error - The server encountered an unexpected condition.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable - The server is currently unable to handle the request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/files/permissions/metadata": {
+      "get": {
+        "summary": "Get permission model metadata",
+        "description": "Returns the current permission evaluation model. NOTE: `resource_permissions` is the only supported model at this time.",
+        "responses": {
+          "200": {
+            "description": "Permissions metadata response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PermissionsMetadata"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request - The request was invalid or cannot be served.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - The request requires user authentication.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden - The server understood the request but refuses to authorize it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found - The requested resource could not be found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests - Rate limit exceeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error - The server encountered an unexpected condition.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable - The server is currently unable to handle the request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/files/{id}/permissions": {
+      "get": {
+        "summary": "Get content permissions",
+        "description": "Returns all user/group permissions on content. If permission model is 'hierarchy_permission', then `permissions_hierarchy` must be provided in the response.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "$top",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Number of items to return per page (default pagination)"
+          },
+          {
+            "name": "$skip",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Number of items to skip (default pagination offset)"
+          },
+          {
+            "name": "$skiptoken",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Used when the query parameters can be memoized into an encoded string containing filtering and pagination parameters. If the endpoint supports memoized paging, the first call can use $top and $skip, while @odata.nextLink will return with $skiptoken. If memoized querying is not supported, $top and $skip should be sufficient."
+          },
+          {
+            "name": "$filter",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "$select",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "$orderby",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Content permission response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PermissionCollection"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request - The request was invalid or cannot be served.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - The request requires user authentication.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden - The server understood the request but refuses to authorize it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found - The requested resource could not be found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests - Rate limit exceeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error - The server encountered an unexpected condition.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable - The server is currently unable to handle the request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "custom_attributes": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "string"
+        },
+        "description": "A map of string to string for representing custom attributes."
+      },
+      "status_enum": {
+        "type": "string",
+        "enum": [
+          "active",
+          "deleted"
+        ]
+      },
+      "node_reference": {
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "example": "parent123"
+          },
+          "name": {
+            "type": "string",
+            "example": "Parent Node Name"
+          },
+          "path": {
+            "type": "string",
+            "example": "/reports/2023"
+          }
+        }
+      },
+      "Node": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "external_url",
+          "last_modified_datetime"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "example": "12345",
+            "description": "Unique id for each file"
+          },
+          "name": {
+            "type": "string",
+            "example": "Document or Folder Name",
+            "description": "User friendly name for the file"
+          },
+          "status": {
+            "$ref": "#/components/schemas/status_enum"
+          },
+          "custom_attributes": {
+            "$ref": "#/components/schemas/custom_attributes"
+          },
+          "last_modified_datetime": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2023-04-17T12:34:56Z",
+            "description": "Used to efficiently ingest content only updated since last ingestion"
+          },
+          "last_modified_by": {
+            "type": "string",
+            "example": "john_doe@abc.com"
+          },
+          "created_datetime": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2023-01-01T00:00:00Z"
+          },
+          "created_by": {
+            "type": "string",
+            "example": "jane_doe@abc.com"
+          },
+          "external_url": {
+            "type": "string",
+            "example": "https://intranet.example.com/files/AnnualReport2024.pdf",
+            "description": "External URL to redirect users"
+          },
+          "metadata_url": {
+            "type": "string",
+            "example": "https://intranet.example.com/content/files/<file_id>",
+            "description": "Used to retrieve metadata about individual files"
+          },
+          "content": {
+            "$ref": "#/components/schemas/ContentObject"
+          },
+          "parent_info": {
+            "$ref": "#/components/schemas/node_reference"
+          },
+          "children_url": {
+            "type": "string",
+            "example": "https://content-gateway-example.com/v1/content/files?$filter=(folder eq 12345)"
+          }
+        }
+      },
+      "ODataContentResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "@odata.context": {
+            "type": "string",
+            "description": "URL to the metadata of the response.",
+            "example": "https://content-gateway-example.com/v1/$metadata#Content"
+          },
+          "value": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Node"
+            }
+          },
+          "@odata.nextLink": {
+            "type": "string",
+            "description": "URL to fetch the next set of results.",
+            "example": "https://content-gateway-example.com/v1/content?$filter=(category in (retail, sales) and file_type in (pdf, docx))&$top=10&$skip=10&$orderby=createdDateTime desc"
+          }
+        }
+      },
+      "ODataContentMetadataResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "@odata.context": {
+            "type": "string",
+            "description": "URL to the metadata of the response.",
+            "example": "https://content-gateway-example.com/v1/$metadata#Content"
+          },
+          "value": {
+            "$ref": "#/components/schemas/NodeWithContent"
+          }
+        }
+      },
+      "ContentObject": {
+        "type": "object",
+        "required": [
+          "mime_type"
+        ],
+        "properties": {
+          "download_path": {
+            "type": "string",
+            "example": "/12345/download",
+            "description": "URL for the download request. For file streams: use `/{id}/download`. Not required for HTML content."
+          },
+          "mime_type": {
+            "type": "string",
+            "example": "application/pdf",
+            "description": "Used to specify type of content. See our supported MIME types here: https://docs.moveworks.com/api-reference/content-gateway/supported-mime-types."
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64",
+            "example": 102400
+          },
+          "sha1_hash": {
+            "type": "string",
+            "example": "2fd4e1c67a2d28fced849ee1bb76e7391b93eb12"
+          }
+        }
+      },
+      "ContentObjectWithBody": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ContentObject"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "body": {
+                "type": "string",
+                "description": "The HTML content. Required when mime_type is `text/html`."
+              }
+            }
+          }
+        ]
+      },
+      "NodeWithContent": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Node"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "content": {
+                "$ref": "#/components/schemas/ContentObjectWithBody"
+              }
+            }
+          }
+        ]
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "message"
+            ],
+            "properties": {
+              "code": {
+                "type": "string",
+                "description": "Standard error code (e.g., UNAUTHORIZED, INVALID_ARGUMENT, NOT_FOUND)."
+              },
+              "message": {
+                "type": "string",
+                "description": "Human-readable explanation of the error."
+              }
+            }
+          }
+        }
+      },
+      "UserCollection": {
+        "type": "object",
+        "properties": {
+          "@odata.context": {
+            "type": "string"
+          },
+          "value": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/User"
+            }
+          },
+          "@odata.nextLink": {
+            "type": "string"
+          }
+        }
+      },
+      "User": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Unique identifier for the user."
+          },
+          "primary_email_addr": {
+            "type": "string",
+            "description": "Primary email address of the user."
+          },
+          "full_name": {
+            "type": "string",
+            "description": "Full name of the user."
+          },
+          "state": {
+            "type": "string",
+            "description": "State of the user account. Enum: Active | Inactive"
+          },
+          "last_modified_datetime": {
+            "type": "string",
+            "description": "Last modification timestamp (ISO 8601)."
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Custom key-value metadata for the user."
+          }
+        }
+      },
+      "GroupCollection": {
+        "type": "object",
+        "properties": {
+          "@odata.context": {
+            "type": "string"
+          },
+          "value": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Group"
+            }
+          },
+          "@odata.nextLink": {
+            "type": "string"
+          }
+        }
+      },
+      "Group": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Unique identifier for the group."
+          },
+          "name": {
+            "type": "string",
+            "description": "Name of the group."
+          },
+          "created_datetime": {
+            "type": "string",
+            "description": "Timestamp when the group was created."
+          },
+          "last_modified_datetime": {
+            "type": "string",
+            "description": "Timestamp when the group was last updated."
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Custom key-value metadata for the group."
+          }
+        }
+      },
+      "GroupMemberCollection": {
+        "type": "object",
+        "properties": {
+          "@odata.context": {
+            "type": "string"
+          },
+          "value": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GroupMember"
+            }
+          },
+          "@odata.nextLink": {
+            "type": "string"
+          }
+        }
+      },
+      "GroupMember": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "Entity type. Enum: USER | GROUP"
+          },
+          "id": {
+            "type": "string",
+            "description": "ID of the member (user or group)."
+          },
+          "name": {
+            "type": "string",
+            "description": "Name of the member (optional)."
+          }
+        }
+      },
+      "PermissionsMetadata": {
+        "type": "object",
+        "properties": {
+          "@odata.context": {
+            "type": "string",
+            "description": "OData metadata context URL."
+          },
+          "model": {
+            "type": "string",
+            "enum": [
+              "resource_permission",
+              "hierarchy_permission"
+            ],
+            "description": "Permission model in use. NOTE: `resource_permissions` is the only supported model at this time."
+          }
+        }
+      },
+      "PermissionCollection": {
+        "type": "object",
+        "properties": {
+          "@odata.context": {
+            "type": "string",
+            "description": "OData metadata context URL."
+          },
+          "value": {
+            "type": "object",
+            "properties": {
+              "permissions": {
+                "type": "array",
+                "description": "List of permission mappings for users and groups.",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "enum": [
+                        "USER",
+                        "GROUP"
+                      ],
+                      "description": "Type of permission entity."
+                    },
+                    "id": {
+                      "type": "string",
+                      "description": "Entity ID (user or group). Wildcard (`*`), used in conjunction with `type` `GROUP`, can be used to denote all Users."
+                    },
+                    "action": {
+                      "type": "string",
+                      "enum": [
+                        "VIEW",
+                        "UPDATE"
+                      ],
+                      "description": "Action permitted on the content."
+                    }
+                  }
+                }
+              },
+              "permissions_hierarchy": {
+                "type": "array",
+                "description": "Hierarchy chain of entity IDs (required if permission model = hierarchy_permission).",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "last_modified_datetime": {
+                "type": "string",
+                "description": "Timestamp of the last permission update."
+              }
+            }
+          },
+          "@odata.nextLink": {
+            "type": "string",
+            "description": "URL to retrieve the next page of permission results."
+          }
+        }
+      }
+    }
+  }
+}
