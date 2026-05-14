@@ -469,13 +469,26 @@ def fetch_permissions_for_file(file_id: str) -> list[dict]:
 
         def fetch_permissions_for_file(file_id: str) -> list[dict]:
             _ensure_permissions_loaded()
-            return _PERMISSION_CACHE.get(file_id, [{"type": "GROUP", "id": "*", "action": "VIEW"}])
+            # Fail closed: an empty list means no one can view this file. Do NOT
+            # default to a public-wildcard entry here -- a partial bulk fetch, a
+            # newly created document, or a race condition would silently grant
+            # public access to a file that may have restricted ACLs.
+            return _PERMISSION_CACHE.get(file_id, [])
 
     Only fall back to per-file live calls when your source has no bulk-fetch
     capability. And in that case, be deliberate about the per-document call
     count, because it directly multiplies first-sync duration.
 
-    If your content is fully public (no per-document access control), return:
+    SECURITY: fail closed on unknown files.
+    If you cannot resolve permissions for a `file_id` (cache miss, source-system
+    404, transient error after retries), return `[]` rather than a public
+    wildcard. An empty list means "no one can view this" -- the file simply will
+    not appear in any user's search results. Returning the wildcard would
+    silently make an unknown file readable by everyone in the org.
+
+    If your content is fully public AND that is an intentional choice for ALL
+    files in your corpus (no per-document access control), then the explicit
+    public wildcard is appropriate:
         return [{"type": "GROUP", "id": "*", "action": "VIEW"}]
 
     The return signature does not change regardless of how you resolve the
@@ -484,12 +497,17 @@ def fetch_permissions_for_file(file_id: str) -> list[dict]:
     TODO: Replace the DEMO_MODE block below with a call to your permission system.
     """
     if DEMO_MODE:
-        return _SAMPLE_PERMISSIONS.get(file_id, [{"type": "GROUP", "id": "*", "action": "VIEW"}])
+        # Fail-closed default: unknown file_id returns no permissions (no one can view).
+        # Do NOT default to a public wildcard here -- see the SECURITY note above.
+        return _SAMPLE_PERMISSIONS.get(file_id, [])
 
     # TODO: call your permission API, e.g.:
     #   response = requests.get(f"{SOURCE_API_BASE_URL}/documents/{file_id}/permissions", ...)
     #   return [{"type": p["entity_type"], "id": p["entity_id"], "action": "VIEW"} for p in response.json()]
-    return [{"type": "GROUP", "id": "*", "action": "VIEW"}]
+    #
+    # Placeholder return below is intentionally fail-closed (no permissions).
+    # Replace with your real permission lookup before connecting to Moveworks.
+    return []
 
 
 def fetch_users_from_source(skip: int, top: int) -> tuple[list[dict], bool]:
