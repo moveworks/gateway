@@ -83,6 +83,34 @@ export $(cat .env | xargs)
 python content_gateway.py
 ```
 
+## Testing the demo end-to-end with a real Moveworks tenant
+
+The demo's sample users have hardcoded emails (`sarah.chen@acmecorp.internal`, etc.) that won't match any real Moveworks user identity. If you connect this server to your Moveworks tenant as-is, content will ingest successfully but won't surface in search for any real user because Moveworks can't resolve any of the demo identities.
+
+To test end-to-end, set `DEMO_TEST_USER_EMAILS` to your real work email before starting the server:
+
+```bash
+DEMO_TEST_USER_EMAILS=you@yourcompany.com \
+GATEWAY_API_KEY=<your-key> \
+python content_gateway.py
+```
+
+You'll be injected as a sample user, added to `group-it-staff`, and through nested group membership in `group-all-employees` you'll have access to `kb-001` through `kb-007`. You will NOT have access to `kb-008` (HR), `kb-009`, or `kb-010` (Executives), so you can verify permission enforcement is working: those documents should be hidden from your search results in the AI Assistant even though they're ingested.
+
+For multiple test users (e.g., for a small QA group), comma-separate the emails.
+
+### End-to-end test sequence
+
+1. Set `DEMO_TEST_USER_EMAILS` and start the server (above).
+2. Expose it over HTTPS (see [Deployment](#deployment) — `ngrok` works for testing).
+3. In **Moveworks Setup**, create the Content Gateway connector pointing at your HTTPS URL.
+4. Trigger an initial sync. Wait for completion under **Enterprise Search > Indexed Content > Files** (typically under 30 minutes for the 10-file demo set).
+5. Open Moveworks AI Assistant as your real user.
+6. Search for content from the demo (try "VPN setup" for `kb-001`, "incident response" for `kb-004`).
+7. Verify HR-restricted content is hidden — search for "compensation" or "salary"; `kb-008` should not appear.
+
+## Validating the schema
+
 Before connecting to Moveworks, validate that your real source is returning the correct schema:
 
 ```bash

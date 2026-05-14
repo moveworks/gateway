@@ -87,6 +87,23 @@ DEFAULT_PAGE_SIZE = 50
 # connecting a real source system.
 DEMO_MODE = not bool(SOURCE_API_BASE_URL)
 
+# Demo-only: inject the running user's real email as a sample user, so that
+# when this server is connected to a real Moveworks tenant, the operator can
+# log into the AI Assistant with their normal credentials and see the demo
+# content surface in search results.
+#
+# Without this, the hardcoded sample users (sarah.chen@acmecorp.internal, etc.)
+# won't match any real Moveworks identity, so search returns nothing.
+#
+# Set to one or more comma-separated emails:
+#   DEMO_TEST_USER_EMAILS="you@yourcompany.com,colleague@yourcompany.com"
+#
+# Each injected user is added to group-it-staff, which (via nested membership
+# in group-all-employees) grants access to kb-001 through kb-007. They will
+# still be denied access to kb-008/009/010 (HR and Executives content) so you
+# can verify permission enforcement end-to-end.
+DEMO_TEST_USER_EMAILS = os.environ.get("DEMO_TEST_USER_EMAILS", "")
+
 # ── Auth: uncomment the block that matches your source system ────────────────
 # _source_headers() is called by every fetch function. One change here
 # applies everywhere. You never need to touch the fetch functions for auth.
@@ -327,6 +344,37 @@ _SAMPLE_PERMISSIONS: dict[str, list[dict]] = {
 }
 
 # --- End of sample data ---
+
+
+# Inject DEMO_TEST_USER_EMAILS into the sample identity data so an operator
+# running the demo against a real Moveworks tenant can see the content surface
+# in their AI Assistant.
+def _inject_test_users() -> None:
+    if not (DEMO_MODE and DEMO_TEST_USER_EMAILS):
+        return
+    emails = [e.strip() for e in DEMO_TEST_USER_EMAILS.split(",") if e.strip()]
+    for i, email in enumerate(emails, start=1):
+        user_id = f"user-test-{i}"
+        display_name = email.split("@")[0].replace(".", " ").title()
+        _SAMPLE_USERS.append({
+            "id": user_id,
+            "email": email,
+            "display_name": display_name,
+            "active": True,
+            "updated_at": "2026-01-01T00:00:00Z",
+        })
+        # Add to group-it-staff so they inherit kb-001..kb-007 access via the
+        # group-all-employees nesting. Intentionally NOT added to group-hr or
+        # group-executives so permission enforcement remains observable
+        # (kb-008/009/010 should be hidden from the test user in search).
+        _SAMPLE_GROUP_MEMBERS["group-it-staff"].append({
+            "type": "USER",
+            "id": user_id,
+            "name": display_name,
+        })
+
+
+_inject_test_users()
 
 
 def fetch_files_from_source(skip: int, top: int) -> tuple[list[dict], bool]:
