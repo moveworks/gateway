@@ -2,7 +2,7 @@
   "openapi": "3.0.0",
   "info": {
     "title": "Content Gateway",
-    "description": "Content Gateway is an extensible approach to integrating custom content systems with Moveworks’ Copilot Search.\n\nThis includes the following features:\n- **Minimal infrastructure**. Just bring your APIs. No job scheduling, indexing, caching, storage, etc.\n- **Simplified traversal**: Moveworks manages traversal logic (pagination / nested structures)\n- **Multiple MIME types**: Supports HTML, PDF, DOCx, PPTx and TXT [mime types](https://developer.mozilla.org/en-US/docs/Web/HTTP/MIME_types/Common_types)\n- **Support many systems**: Build & configure as many content gateway connectors as needed\n",
+    "description": "Content Gateway is an extensible approach to integrating custom content systems with Moveworks’ Copilot Search.\n\nThis includes the following features:\n- **Minimal infrastructure**. Just bring your APIs. No job scheduling, indexing, caching, storage, etc.\n- **Simplified traversal**: Moveworks manages traversal logic (pagination / nested structures)\n- **Multiple MIME types**: Supports HTML, PDF, DOCx, PPTx and TXT [mime types](https://developer.mozilla.org/en-US/docs/Web/HTTP/MIME_types/Common_types)\n- **Support many systems**: Build & configure as many content gateway connectors as needed\n\n## Rate limiting\n\nGateways can throttle Moveworks two ways, used independently or together:\n- **Proactive**: emit `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and `X-RateLimit-Reset` on every successful response. Moveworks reads these (and RFC 9456 `RateLimit-*` variants) to pace its call rate before you have to fail anything.\n- **Reactive**: when at capacity, respond `429 Too Many Requests` with a `Retry-After` header. Moveworks honors the wait value and retries.\n\n## File size cap\n\nMoveworks caps individual binary file downloads at **25 MB**. Files larger than this are downloaded and then rejected by indexing with `FILE_SIZE_LIMIT_EXCEEDED`; they will not appear in search results. The error is non-retryable. Filter oversize files out of `/files` at your source rather than letting Moveworks re-download them every sync.\n",
     "version": "1.0.0"
   },
   "servers": [
@@ -65,6 +65,11 @@
         "responses": {
           "200": {
             "description": "Successfully retrieved list of content items with enhanced information.",
+            "headers": {
+              "X-RateLimit-Limit":     { "$ref": "#/components/headers/X-RateLimit-Limit" },
+              "X-RateLimit-Remaining": { "$ref": "#/components/headers/X-RateLimit-Remaining" },
+              "X-RateLimit-Reset":     { "$ref": "#/components/headers/X-RateLimit-Reset" }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -274,7 +279,7 @@
     "/files/{id}/download": {
       "get": {
         "summary": "Download file",
-        "description": "Retrieves and downloads the entire media file based on the specified file ID.\n\nThe response body is the raw binary content of the file. Treat the response body as a byte stream and write it directly to disk or pass it to a file handler.\n\nThe `Content-Type` response header indicates the MIME type of the file (e.g. `application/pdf`, `text/html`). Use this to determine how to handle or display the file.\n\nThe `Checksum-SHA256` response header provides a SHA-256 hash of the file contents. Verify this value against the downloaded bytes to confirm the file was not corrupted in transit.\n",
+        "description": "Retrieves and downloads the entire media file based on the specified file ID.\n\nThe response body is the raw binary content of the file. Treat the response body as a byte stream and write it directly to disk or pass it to a file handler.\n\nThe `Content-Type` response header indicates the MIME type of the file (e.g. `application/pdf`, `text/html`). Use this to determine how to handle or display the file.\n\nThe `Checksum-SHA256` response header provides a SHA-256 hash of the file contents. Verify this value against the downloaded bytes to confirm the file was not corrupted in transit.\n\n**File size cap (25 MB)**: Moveworks caps individual binary downloads at 25 MB. Files larger than this are downloaded by Moveworks, then rejected by the indexing pipeline with status `FILE_SIZE_LIMIT_EXCEEDED` and will not appear in search results. The error is non-retryable. If you knowingly serve oversize files, filter them out of `/files` rather than letting Moveworks re-download them every sync.\n",
         "parameters": [
           {
             "in": "path",
@@ -794,7 +799,7 @@
     "/files/permissions/metadata": {
       "get": {
         "summary": "Get permission model metadata",
-        "description": "Returns the current permission evaluation model. NOTE: `resource_permissions` is the only supported model at this time.",
+        "description": "Returns the current permission evaluation model. Only `resource_permission` is currently consumed by Moveworks ingestion. `hierarchy_permission` is reserved for a future model and should not be returned by gateways today.",
         "responses": {
           "200": {
             "description": "Permissions metadata response",
@@ -882,7 +887,7 @@
     "/files/{id}/permissions": {
       "get": {
         "summary": "Get content permissions",
-        "description": "Returns all user/group permissions on content. If permission model is 'hierarchy_permission', then `permissions_hierarchy` must be provided in the response.",
+        "description": "Returns all user/group permissions on content. Each entry has `type` (USER or GROUP), `id`, and `action: VIEW`. The `permissions_hierarchy` field is reserved for the future `hierarchy_permission` model and is not consumed today.",
         "parameters": [
           {
             "name": "id",
@@ -1024,6 +1029,29 @@
     }
   },
   "components": {
+    "headers": {
+      "X-RateLimit-Limit": {
+        "description": "Maximum number of requests the gateway will accept in the current window. Moveworks reads this header (and RFC 9456 `RateLimit-Limit` variant) to throttle proactively. Optional but strongly recommended in production.",
+        "required": false,
+        "schema": {
+          "type": "integer"
+        }
+      },
+      "X-RateLimit-Remaining": {
+        "description": "Requests remaining in the current window. Moveworks reads this header (and RFC 9456 `RateLimit-Remaining` variant) to pace its call rate.",
+        "required": false,
+        "schema": {
+          "type": "integer"
+        }
+      },
+      "X-RateLimit-Reset": {
+        "description": "Seconds until the rate-limit window resets. Moveworks reads this header (and RFC 9456 `RateLimit-Reset` variant) to know when capacity is restored.",
+        "required": false,
+        "schema": {
+          "type": "integer"
+        }
+      }
+    },
     "schemas": {
       "custom_attributes": {
         "type": "object",
@@ -1183,7 +1211,8 @@
           "size": {
             "type": "integer",
             "format": "int64",
-            "example": 102400
+            "example": 102400,
+            "description": "File size in bytes. Moveworks caps binary downloads at 25 MB (26,214,400 bytes). Files larger than this are downloaded and then rejected by indexing with `FILE_SIZE_LIMIT_EXCEEDED`; they will not appear in search results."
           },
           "sha1_hash": {
             "type": "string",
@@ -1281,7 +1310,11 @@
           },
           "state": {
             "type": "string",
-            "description": "State of the user account. Enum: Active | Inactive"
+            "enum": [
+              "Active",
+              "Inactive"
+            ],
+            "description": "State of the user account."
           },
           "last_modified_datetime": {
             "type": "string",
@@ -1357,7 +1390,11 @@
         "properties": {
           "type": {
             "type": "string",
-            "description": "Entity type. Enum: USER | GROUP"
+            "enum": [
+              "USER",
+              "GROUP"
+            ],
+            "description": "Entity type."
           },
           "id": {
             "type": "string",
@@ -1382,7 +1419,7 @@
               "resource_permission",
               "hierarchy_permission"
             ],
-            "description": "Permission model in use. NOTE: `resource_permissions` is the only supported model at this time."
+            "description": "Permission model in use. Only `resource_permission` is currently consumed by Moveworks ingestion. `hierarchy_permission` is reserved for a future model and should not be returned by gateways today."
           }
         }
       },
@@ -1417,10 +1454,9 @@
                     "action": {
                       "type": "string",
                       "enum": [
-                        "VIEW",
-                        "UPDATE"
+                        "VIEW"
                       ],
-                      "description": "Action permitted on the content."
+                      "description": "Action permitted on the content. Only `VIEW` is consumed by Moveworks ingestion; other values will be rejected by the schema validator."
                     }
                   }
                 }
