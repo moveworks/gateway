@@ -1,5 +1,5 @@
 """
-Moveworks Content Gateway — Schema Validator
+Moveworks Content Gateway: Schema Validator
 ════════════════════════════════════════════
 Validates that a running Content Gateway server returns responses that
 conform to the Moveworks Content Gateway API schema.
@@ -9,7 +9,7 @@ Run this against your server at any stage:
   - Against your real source after editing content_gateway.py
   - Against any deployed instance before connecting Moveworks
 
-Works for any source system — it tests protocol conformance, not content.
+Works for any source system. It tests protocol conformance, not content.
 
 USAGE
 ─────
@@ -98,8 +98,39 @@ def validate_auth():
     r = requests.get(f"{SERVER_URL}/v1/files", timeout=10)
     check("Rejects missing Authorization header with 401", r.status_code == 401, f"got HTTP {r.status_code}")
 
-    status, _ = get("/v1/files")
-    check("Accepts valid API key", status == 200, f"got HTTP {status}")
+    r = requests.get(f"{SERVER_URL}/v1/files", headers={"Authorization": f"Bearer {API_KEY}"}, timeout=10)
+    check("Accepts valid API key", r.status_code == 200, f"got HTTP {r.status_code}")
+
+    # Rate-limit headers are advisory but recommended. Moveworks reads them to
+    # pace its call rate. Warn if missing rather than fail.
+    rl_headers = {h.lower() for h in r.headers}
+    has_rl = any(h.startswith(("x-ratelimit-", "x-rate-limit-", "ratelimit-")) for h in rl_headers)
+    if has_rl:
+        check("Emits rate-limit headers (X-RateLimit-* or RFC 9456 variants)", True)
+    else:
+        warn("No rate-limit headers found on response",
+             "Moveworks reads X-RateLimit-Limit/Remaining/Reset to throttle proactively. Recommended for production.")
+
+
+def validate_permissions_metadata():
+    section("GET /v1/files/permissions/metadata")
+
+    status, body = get("/v1/files/permissions/metadata")
+
+    if status == 404:
+        warn("Endpoint returned 404. Not implemented",
+             "Required for ReBAC. Should return {\"model\": \"resource_permission\"}.")
+        return
+
+    if not check("Returns HTTP 200", status == 200, f"got {status}"):
+        return
+
+    model = body.get("model")
+    check(
+        "Reports model='resource_permission' (the only supported model)",
+        model == "resource_permission",
+        f"got model='{model}'",
+    )
 
 
 def validate_files() -> list[dict]:
@@ -132,12 +163,11 @@ def validate_files() -> list[dict]:
         content = f.get("content", {})
         if "mime_type" not in content:
             issues.append(f"{label}: content missing mime_type")
-        elif content["mime_type"] == "text/html":
-            if "body" not in content:
-                issues.append(f"{label}: text/html content missing body field")
-        else:
+        elif content["mime_type"] != "text/html":
             if "download_path" not in content:
                 issues.append(f"{label}: binary content missing download_path field")
+        # HTML body is not required in the /files list response. Moveworks
+        # re-fetches it via /files/{id}. The body check happens there instead.
 
         if f.get("status") not in ("active", "deleted", None):
             issues.append(f"{label}: status must be 'active' or 'deleted', got '{f.get('status')}'")
@@ -154,7 +184,11 @@ def validate_files() -> list[dict]:
 def validate_single_file(files: list[dict]):
     if not files:
         return
-    file_id = files[0]["id"]
+    # Prefer testing an HTML file if available, so we can verify the inline-body
+    # contract that Moveworks reads from this endpoint.
+    html_files = [f for f in files if f.get("content", {}).get("mime_type") == "text/html"]
+    test_file = html_files[0] if html_files else files[0]
+    file_id = test_file["id"]
     section(f"GET /v1/files/{{id}}  (testing id={file_id})")
 
     status, body = get(f"/v1/files/{file_id}")
@@ -167,6 +201,15 @@ def validate_single_file(files: list[dict]):
     check("Returned file id matches requested id", file.get("id") == file_id,
           f"requested {file_id}, got {file.get('id')}")
 
+    # HTML body must be inline on /files/{id}. This is where Moveworks reads it.
+    content = file.get("content", {})
+    if content.get("mime_type") == "text/html":
+        check(
+            "text/html content includes inline body on /files/{id}",
+            bool(content.get("body")),
+            "Moveworks reads HTML content from this endpoint's body field, not from /files",
+        )
+
 
 def validate_permissions(files: list[dict]):
     if not files:
@@ -177,7 +220,7 @@ def validate_permissions(files: list[dict]):
     status, body = get(f"/v1/files/{file_id}/permissions")
 
     if status == 404:
-        warn("Endpoint returned 404 — not implemented",
+        warn("Endpoint returned 404. Not implemented",
              "Required for ReBAC. Implement fetch_permissions_for_file() in Section 2.")
         return
 
@@ -193,6 +236,7 @@ def validate_permissions(files: list[dict]):
     check("At least one permission entry returned", len(permissions) > 0, f"got {len(permissions)}")
 
     issues = []
+    wildcard_issues = []
     for i, p in enumerate(permissions):
         ok, detail = has_keys(p, "id", "type", "action")
         if not ok:
@@ -202,12 +246,23 @@ def validate_permissions(files: list[dict]):
             issues.append(f"permission[{i}]: type must be USER or GROUP, got '{p.get('type')}'")
         if p.get("action") != "VIEW":
             issues.append(f"permission[{i}]: action must be VIEW, got '{p.get('action')}'")
+        # Wildcard antipattern: id "*" only works as a public-access wildcard
+        # when paired with type "GROUP". USER+* will not behave as a wildcard.
+        if p.get("id") == "*" and p.get("type") != "GROUP":
+            wildcard_issues.append(
+                f"permission[{i}]: {{type: '{p.get('type')}', id: '*'}} is not a working "
+                "wildcard. Only {type: 'GROUP', id: '*'} grants access to all users"
+            )
 
     check(
         "All permission entries have valid shape",
         len(issues) == 0,
         f"\n" + "\n".join(f"       · {i}" for i in issues) if issues else ""
     )
+
+    if wildcard_issues:
+        for w in wildcard_issues:
+            warn(w)
 
 
 def validate_users():
@@ -216,7 +271,7 @@ def validate_users():
     status, body = get("/v1/users")
 
     if status == 404:
-        warn("Endpoint returned 404 — not implemented",
+        warn("Endpoint returned 404. Not implemented",
              "Required for ReBAC. Implement fetch_users_from_source() in Section 2.")
         return
 
@@ -246,7 +301,7 @@ def validate_groups():
     status, body = get("/v1/groups")
 
     if status == 404:
-        warn("Endpoint returned 404 — not implemented",
+        warn("Endpoint returned 404. Not implemented",
              "Required for ReBAC. Implement fetch_groups_from_source() in Section 2.")
         return
 
@@ -276,7 +331,7 @@ def validate_groups():
         status, body = get(f"/v1/groups/{group_id}/members")
 
         if status == 404:
-            warn("Members endpoint returned 404 — not implemented",
+            warn("Members endpoint returned 404. Not implemented",
                  "Required for ReBAC group resolution.")
             return
 
@@ -315,7 +370,7 @@ def main():
         print("  Export it before running: export GATEWAY_API_KEY=your-key\n")
         sys.exit(1)
 
-    print(f"\nMoveworks Content Gateway — Schema Validator")
+    print(f"\nMoveworks Content Gateway: Schema Validator")
     print(f"{'═' * 44}")
     print(f"  Server:  {SERVER_URL}")
     print(f"  Mode:    {'ReBAC (full)' if args.rebac else 'Files only  (add --rebac to test users, groups, permissions)'}")
@@ -325,6 +380,7 @@ def main():
     validate_single_file(files)
 
     if args.rebac:
+        validate_permissions_metadata()
         validate_permissions(files)
         validate_users()
         validate_groups()
@@ -333,7 +389,7 @@ def main():
     if errors_found == 0:
         print(f"  {PASS} All checks passed\n")
     else:
-        print(f"  {FAIL} {errors_found} check(s) failed — fix the issues above before connecting Moveworks\n")
+        print(f"  {FAIL} {errors_found} check(s) failed. Fix the issues above before connecting Moveworks\n")
         sys.exit(1)
 
 

@@ -1,15 +1,15 @@
 """
-Moveworks Content Gateway — Starter Server
+Moveworks Content Gateway: Starter Server
 ══════════════════════════════════════════════════════════════════
 This file is both a working demo and your integration starting point.
 
-STEP 1 — RUN IT NOW
+STEP 1: RUN IT NOW
   python content_gateway.py
   The built-in sample data (Acme IT Knowledge Portal) demonstrates every
   supported content type, permission pattern, and group structure. Use it
   to verify your Moveworks connector is wired up before touching any code.
 
-STEP 2 — CONNECT YOUR SOURCE
+STEP 2: CONNECT YOUR SOURCE
   Edit the three labeled sections in this file:
 
   SECTION 1 · CONFIGURATION
@@ -25,11 +25,20 @@ STEP 2 — CONNECT YOUR SOURCE
     Update the field names in map_item_to_node (and map_item_to_user,
     map_item_to_group if you sync identity) to match your API's response shape.
 
-  Everything else — OData pagination, Bearer auth, error shapes, rate-limit
-  headers — is complete and does not need changes.
+  OData pagination, Bearer auth, and error shapes are complete and do not need
+  changes. The rate-limit header hook (`add_rate_limit_headers`) is in place
+  but the values are commented out by default. Wire them up to your real
+  rate-limit budget when you go to production.
 
-Full API spec:  https://help.moveworks.com/api-reference/content-gateway/content-gateway
-Deploy guide:   https://help.moveworks.com/api-reference/content-gateway/starter-code
+Full API spec:  https://docs.moveworks.com/api-reference/content-gateway/content-gateway
+Deploy guide:   https://docs.moveworks.com/api-reference/content-gateway/starter-code
+
+KEY FIELD TO GET RIGHT
+  `last_modified_datetime` on each file (returned by map_item_to_node) is the
+  cache fingerprint Moveworks uses to skip re-downloading unchanged file
+  binaries on subsequent syncs. An accurate, monotonically-updated value is the
+  primary way to keep ongoing ingestion load low. See the map_item_to_node
+  docstring for detail.
 
 Deployment:
   - Local dev:       python content_gateway.py  (port 5001 by default)
@@ -54,7 +63,7 @@ groups_bp = Blueprint("groups", __name__)
 # ============================================================
 # SECTION 1: CONFIGURATION
 # ============================================================
-# All secrets are read from environment variables — never hardcode them here.
+# All secrets are read from environment variables. Never hardcode them here.
 #
 # How to set these depends on your deployment platform:
 #   AWS Lambda:      Secrets Manager or Lambda Environment Variables
@@ -78,21 +87,38 @@ DEFAULT_PAGE_SIZE = 50
 # connecting a real source system.
 DEMO_MODE = not bool(SOURCE_API_BASE_URL)
 
-# ── Auth — uncomment the block that matches your source system ────────────────
+# Demo-only: inject the running user's real email as a sample user, so that
+# when this server is connected to a real Moveworks tenant, the operator can
+# log into the AI Assistant with their normal credentials and see the demo
+# content surface in search results.
+#
+# Without this, the hardcoded sample users (sarah.chen@acmecorp.internal, etc.)
+# won't match any real Moveworks identity, so search returns nothing.
+#
+# Set to one or more comma-separated emails:
+#   DEMO_TEST_USER_EMAILS="you@yourcompany.com,colleague@yourcompany.com"
+#
+# Each injected user is added to group-it-staff, which (via nested membership
+# in group-all-employees) grants access to kb-001 through kb-007. They will
+# still be denied access to kb-008/009/010 (HR and Executives content) so you
+# can verify permission enforcement end-to-end.
+DEMO_TEST_USER_EMAILS = os.environ.get("DEMO_TEST_USER_EMAILS", "")
+
+# ── Auth: uncomment the block that matches your source system ────────────────
 # _source_headers() is called by every fetch function. One change here
-# applies everywhere — you never need to touch the fetch functions for auth.
+# applies everywhere. You never need to touch the fetch functions for auth.
 # Only one block should be active at a time.
 
-# BEARER TOKEN (most common — sends Authorization: Bearer <token>)
+# BEARER TOKEN (most common; sends Authorization: Bearer <token>)
 def _source_headers() -> dict:
     return {"Authorization": f"Bearer {SOURCE_API_KEY}"}
 
-# API KEY HEADER — a static key sent in a named header
+# API KEY HEADER: a static key sent in a named header
 # API_KEY_HEADER = "X-API-Key"  # TODO: your header name (e.g. X-API-Key, Api-Key, X-Auth-Token)
 # def _source_headers() -> dict:
 #     return {API_KEY_HEADER: SOURCE_API_KEY}
 
-# OAUTH 2.0 CLIENT CREDENTIALS — exchanges client ID + secret for a short-lived token
+# OAUTH 2.0 CLIENT CREDENTIALS: exchanges client ID + secret for a short-lived token
 # SOURCE_CLIENT_ID     = os.environ.get("SOURCE_CLIENT_ID", "")
 # SOURCE_CLIENT_SECRET = os.environ.get("SOURCE_CLIENT_SECRET", "")
 # TOKEN_URL            = "https://your-system.example.com/oauth/token"  # TODO: your token endpoint
@@ -113,7 +139,7 @@ def _source_headers() -> dict:
 #     _token_cache["expires_at"] = now + data.get("expires_in", 3600)
 #     return {"Authorization": f"Bearer {_token_cache['token']}"}
 
-# NO AUTH — open API, no credentials required
+# NO AUTH: open API, no credentials required
 # def _source_headers() -> dict:
 #     return {}
 
@@ -122,14 +148,13 @@ def _source_headers() -> dict:
 # SECTION 2: SOURCE FUNCTIONS
 # ============================================================
 # Implement the fetch_* functions below to call your source API.
-# These are the only functions you need to write — everything else
-# is handled by the gateway server in Section 4.
-#
+# These are the only functions you need to write. Everything else
+# is handled by the gateway server in Section 4: #
 # Each function has a docstring explaining what to return and what
 # patterns to watch for. When SOURCE_API_BASE_URL is not set, these
 # functions return sample data so you can run the server immediately.
 
-# --- Sample data (used in demo mode only — safe to delete once you connect a real source) ---
+# --- Sample data (used in demo mode only. Safe to delete once you connect a real source) ---
 # Theme: Acme Corp IT Knowledge Portal
 # John (john.m@acmecorp.internal) is in group-it-staff and group-all-employees (via nesting).
 # He does NOT have access to kb-008 (hr), kb-009 (executives), or kb-010 (executives).
@@ -236,7 +261,7 @@ _SAMPLE_FILES = [
     },
     {
         "id": "kb-010",
-        "title": "Board Meeting Deck — April 2026",
+        "title": "Board Meeting Deck. April 2026",
         "url": "https://exec.acmecorp.internal/board/april-2026-deck",
         "updated_at": "2026-04-28T08:00:00Z",
         "created_at": "2026-04-25T10:00:00Z",
@@ -284,7 +309,7 @@ _SAMPLE_GROUP_MEMBERS: dict[str, list[dict]] = {
     ],
 }
 
-# Five permission patterns are demonstrated below — covering the most common
+# Five permission patterns are demonstrated below. Covering the most common
 # real-world scenarios a Content Gateway integration will encounter:
 #
 #   PUBLIC (*)        Group id "*" means every user can see the document.
@@ -293,7 +318,7 @@ _SAMPLE_GROUP_MEMBERS: dict[str, list[dict]] = {
 #   ALL_EMPLOYEES     A top-level group that contains nested sub-groups.
 #                     John is in group-it-staff, which is a member of
 #                     group-all-employees, so he inherits access here.
-#                     Moveworks resolves nesting automatically — you only
+#                     Moveworks resolves nesting automatically. You only
 #                     need to return direct members from each group endpoint.
 #
 #   IT_STAFF          Department-scoped grant. John is a direct member, so
@@ -321,19 +346,50 @@ _SAMPLE_PERMISSIONS: dict[str, list[dict]] = {
 # --- End of sample data ---
 
 
+# Inject DEMO_TEST_USER_EMAILS into the sample identity data so an operator
+# running the demo against a real Moveworks tenant can see the content surface
+# in their AI Assistant.
+def _inject_test_users() -> None:
+    if not (DEMO_MODE and DEMO_TEST_USER_EMAILS):
+        return
+    emails = [e.strip() for e in DEMO_TEST_USER_EMAILS.split(",") if e.strip()]
+    for i, email in enumerate(emails, start=1):
+        user_id = f"user-test-{i}"
+        display_name = email.split("@")[0].replace(".", " ").title()
+        _SAMPLE_USERS.append({
+            "id": user_id,
+            "email": email,
+            "display_name": display_name,
+            "active": True,
+            "updated_at": "2026-01-01T00:00:00Z",
+        })
+        # Add to group-it-staff so they inherit kb-001..kb-007 access via the
+        # group-all-employees nesting. Intentionally NOT added to group-hr or
+        # group-executives so permission enforcement remains observable
+        # (kb-008/009/010 should be hidden from the test user in search).
+        _SAMPLE_GROUP_MEMBERS["group-it-staff"].append({
+            "type": "USER",
+            "id": user_id,
+            "name": display_name,
+        })
+
+
+_inject_test_users()
+
+
 def fetch_files_from_source(skip: int, top: int) -> tuple[list[dict], bool]:
     """
     Fetch a page of documents from your source system. This is one of the two
-    functions you will spend the most time on — it is entirely yours to implement.
+    functions you will spend the most time on. It is entirely yours to implement.
 
     Returns:
         (items, has_more)
           items:    List of raw document dicts from your API. The shape only
-                    matters in map_item_to_node() — return whatever your API gives you.
+                    matters in map_item_to_node(). Return whatever your API gives you.
           has_more: True if there are more pages after this one.
 
     MULTI-SOURCE SYSTEMS (SharePoint, Confluence, Google Drive, Zendesk, ...):
-    Most enterprise content systems organize content across multiple containers —
+    Most enterprise content systems organize content across multiple containers -
     SharePoint has sites, Confluence has spaces, Google Drive has shared drives,
     Zendesk has brands. The Content Gateway expects a single flat stream of
     documents. If that describes your system, enumerate all containers here and
@@ -402,7 +458,7 @@ def fetch_file_bytes_from_source(file_id: str) -> Optional[tuple[bytes, str]]:
     Notes:
       - Only needed for non-HTML content (PDF, DOCX, PPTX, TXT).
       - For HTML content, Moveworks reads the `body` field from
-        fetch_file_from_source() instead — no download is needed.
+        fetch_file_from_source() instead. No download is needed.
 
     TODO: Replace the DEMO_MODE block below with a call to your actual download endpoint.
     """
@@ -431,43 +487,75 @@ def fetch_permissions_for_file(file_id: str) -> list[dict]:
     Return who can view a specific file. This is entirely yours to implement.
 
     Returns a list of permission objects:
-      {"type": "USER" | "GROUP", "id": "<id>", "action": "VIEW" | "UPDATE"}
+      {"type": "USER" | "GROUP", "id": "<id>", "action": "VIEW"}
+
+    Only "VIEW" is currently supported as an action. Other values are rejected
+    by the schema validator.
 
     PERMISSION INHERITANCE (SharePoint, Confluence, Box, Google Drive, ...):
     Many systems do not store permissions on individual documents. Instead, a
     document inherits its access rules from the folder, space, or site that
-    contains it. You have to walk that hierarchy yourself and return the resolved
-    effective permissions. This commonly requires 2-4 API calls per document:
+    contains it. You resolve the effective permissions and return them as a
+    flat list.
+
+    PERFORMANCE (IMPORTANT FOR LARGE CORPORA):
+    This function is called once per file per sync. Walking the inheritance
+    hierarchy with live API calls (2-4 calls per document) multiplies your
+    first-sync load by the same factor. For a 10,000-file corpus that's
+    20,000-40,000 extra calls to your source system on every sync.
+
+    Strongly prefer bulk pre-fetching when your source supports it:
+
+        _PERMISSION_CACHE: dict[str, list[dict]] = {}
+
+        def _ensure_permissions_loaded():
+            if _PERMISSION_CACHE:
+                return
+            # One bulk call (or a small handful) to your source instead of one per file
+            for acl in requests.get(f"{BASE}/all-acls").json():
+                _PERMISSION_CACHE[acl["doc_id"]] = _map_acl_entries(acl["entries"])
 
         def fetch_permissions_for_file(file_id: str) -> list[dict]:
-            # 1. Get the document to find its parent container
-            doc = requests.get(f"{BASE}/documents/{file_id}").json()
-            parent_id = doc.get("parent_id")
+            _ensure_permissions_loaded()
+            # Fail closed: an empty list means no one can view this file. Do NOT
+            # default to a public-wildcard entry here -- a partial bulk fetch, a
+            # newly created document, or a race condition would silently grant
+            # public access to a file that may have restricted ACLs.
+            return _PERMISSION_CACHE.get(file_id, [])
 
-            # 2. Check if the document has its own ACL
-            acl = requests.get(f"{BASE}/documents/{file_id}/acl").json()
-            if not acl.get("inherited"):
-                return _map_acl_entries(acl["entries"])
+    Only fall back to per-file live calls when your source has no bulk-fetch
+    capability. And in that case, be deliberate about the per-document call
+    count, because it directly multiplies first-sync duration.
 
-            # 3. Fall back to the parent folder/space/site ACL
-            parent_acl = requests.get(f"{BASE}/folders/{parent_id}/acl").json()
-            return _map_acl_entries(parent_acl["entries"])
+    SECURITY: fail closed on unknown files.
+    If you cannot resolve permissions for a `file_id` (cache miss, source-system
+    404, transient error after retries), return `[]` rather than a public
+    wildcard. An empty list means "no one can view this" -- the file simply will
+    not appear in any user's search results. Returning the wildcard would
+    silently make an unknown file readable by everyone in the org.
 
-    If your content is fully public (no per-document access control), return:
+    If your content is fully public AND that is an intentional choice for ALL
+    files in your corpus (no per-document access control), then the explicit
+    public wildcard is appropriate:
         return [{"type": "GROUP", "id": "*", "action": "VIEW"}]
 
-    The return signature does not change regardless of how many API calls it takes
-    to resolve the permissions — Moveworks always receives the same flat list.
+    The return signature does not change regardless of how you resolve the
+    permissions. Moveworks always receives the same flat list.
 
     TODO: Replace the DEMO_MODE block below with a call to your permission system.
     """
     if DEMO_MODE:
-        return _SAMPLE_PERMISSIONS.get(file_id, [{"type": "GROUP", "id": "*", "action": "VIEW"}])
+        # Fail-closed default: unknown file_id returns no permissions (no one can view).
+        # Do NOT default to a public wildcard here -- see the SECURITY note above.
+        return _SAMPLE_PERMISSIONS.get(file_id, [])
 
     # TODO: call your permission API, e.g.:
     #   response = requests.get(f"{SOURCE_API_BASE_URL}/documents/{file_id}/permissions", ...)
     #   return [{"type": p["entity_type"], "id": p["entity_id"], "action": "VIEW"} for p in response.json()]
-    return [{"type": "GROUP", "id": "*", "action": "VIEW"}]
+    #
+    # Placeholder return below is intentionally fail-closed (no permissions).
+    # Replace with your real permission lookup before connecting to Moveworks.
+    return []
 
 
 def fetch_users_from_source(skip: int, top: int) -> tuple[list[dict], bool]:
@@ -482,7 +570,7 @@ def fetch_users_from_source(skip: int, top: int) -> tuple[list[dict], bool]:
 
     MULTI-DIRECTORY SYSTEMS (Workday + Azure AD, LDAP + SCIM, ...):
     If your users live in more than one directory, enumerate all directories
-    here and flatten before returning — same pattern as fetch_files_from_source:
+    here and flatten before returning. Same pattern as fetch_files_from_source:
 
         def fetch_users_from_source(skip, top):
             all_users = []
@@ -530,14 +618,27 @@ def fetch_group_members_from_source(
     group_id: str, skip: int, top: int
 ) -> tuple[list[dict], bool]:
     """
-    Fetch direct members (users or sub-groups) of a specific group.
+    Fetch the DIRECT members of a specific group. Users and/or sub-groups.
 
-    Moveworks handles nested group resolution — you only need to return
-    the direct members, not all descendants.
+    Moveworks handles nested group resolution at query time. Return only the
+    direct members of `group_id`, not transitive descendants. If group A
+    contains group B which contains user U, the response for group A is
+    [{"type": "GROUP", "id": "B"}], NOT [{"type": "USER", "id": "U"}].
 
     Returns:
         (members, has_more)
         Each member should be a dict with keys: type ("USER" or "GROUP"), id, name
+
+    PAGINATION (IMPORTANT FOR LARGE GROUPS):
+    Respect the `skip` and `top` parameters and return `has_more=True` when
+    there are more members beyond the current page. The starter handler emits
+    `@odata.nextLink` based on your `has_more` value, and Moveworks follows
+    the chain automatically.
+
+    This matters most for groups with very large membership counts (e.g., an
+    "all employees" group with tens of thousands of members). Returning every
+    member in a single response produces a slow, oversized payload that risks
+    hitting response-time limits. Paginate by honoring `top`.
 
     TODO: Replace the DEMO_MODE block below with a call to your group membership API.
     """
@@ -559,49 +660,75 @@ def fetch_group_members_from_source(
 # Every field marked "required" must always be present and non-null.
 # Optional fields improve search quality but will not break ingestion if omitted.
 
-def map_item_to_node(item: dict) -> dict:
+def map_item_to_node(item: dict, *, include_html_body: bool = False) -> dict:
     """
     Map a raw document from your source API to a Content Gateway Node.
 
     Required fields: id, name, external_url, last_modified_datetime, content.mime_type
-    Optional fields: status, created_datetime, created_by, last_modified_by, custom_attributes
+    Optional fields: size, status, created_datetime, created_by, last_modified_by, custom_attributes
 
     Supported MIME types:
         application/pdf
         application/vnd.openxmlformats-officedocument.wordprocessingml.document  (.docx)
         application/vnd.openxmlformats-officedocument.presentationml.presentation (.pptx)
         text/plain
-        text/html  (inline HTML body — no download endpoint needed)
+        text/html  (inline HTML body. Fetched via /files/{id})
+
+    `last_modified_datetime` is special: Moveworks uses it as a cache fingerprint
+    for the file's BINARY content. On subsequent syncs, files whose timestamp
+    matches the previously cached value skip the /files/{id}/download call
+    entirely. Returning an accurate, monotonically-updated value is the primary
+    way to keep ongoing ingestion load low. Especially for large attachments.
+
+    Note: the cache applies only to binary downloads. HTML files (mime_type ==
+    "text/html") have their body fetched via /files/{id} on every sync, with
+    no equivalent caching. If your corpus is mostly HTML, ongoing load will
+    be roughly the same as first-sync load.
+
+    `include_html_body` controls whether HTML body content is embedded in the
+    response. Default is False (used by the /files list endpoint, where
+    Moveworks does not read body). The /files/{id} endpoint sets this to True
+    so the body comes back inline. Including body unconditionally is wasted
+    payload on every list response.
+
+    `size` (optional but recommended): the file size in bytes. Moveworks
+    currently caps individual file content at 25 MB. Files larger than that
+    are downloaded but then rejected by the indexing pipeline (status
+    FILE_SIZE_LIMIT_EXCEEDED) and never appear in search. Returning an accurate
+    `size` lets future optimizations avoid the wasted download.
 
     TODO: Update each field mapping to match your source API's response shape.
-    The field names on the right (item["title"], item["url"], etc.) are examples —
+    The field names on the right (item["title"], item["url"], etc.) are examples -
     replace them with whatever your API actually returns.
     """
     mime_type = item.get("mime_type", "application/pdf")      # TODO: your MIME type field
 
     content: dict = {
         "mime_type": mime_type,                               # required
-        "size": item.get("file_size"),                        # optional — bytes
+        "size": item.get("file_size"),                        # optional. Bytes; helps with 25MB cap
     }
 
     if mime_type == "text/html":
-        # HTML content is returned inline — no separate download request is needed.
-        content["body"] = item.get("html_body", "")          # TODO: your HTML body field
+        # HTML body is read by Moveworks from the /files/{id} response, not
+        # from the /files list response. Only include body when this mapper
+        # is called for the single-file endpoint.
+        if include_html_body:
+            content["body"] = item.get("html_body", "")      # TODO: your HTML body field
     else:
         content["download_path"] = f"/{item.get('id', '')}/download"  # TODO: your ID field
-        content["sha1_hash"] = item.get("sha1_hash")          # optional — for dedup
+        content["sha1_hash"] = item.get("sha1_hash")          # optional. For dedup
 
     return {
-        "id": str(item["id"]),                               # required — stable unique ID
-        "name": item["title"],                               # required — TODO: your title field
-        "external_url": item["url"],                         # required — TODO: the URL users click
-        "last_modified_datetime": item["updated_at"],        # required — TODO: ISO 8601 timestamp
+        "id": str(item["id"]),                               # required. Stable unique ID
+        "name": item["title"],                               # required. TODO: your title field
+        "external_url": item["url"],                         # required. TODO: the URL users click
+        "last_modified_datetime": item["updated_at"],        # required. TODO: ISO 8601 timestamp
         "status": "deleted" if item.get("archived") else "active",  # TODO: your archive/status logic
         "created_datetime": item.get("created_at"),          # optional
         "created_by": item.get("author_email"),              # optional
         "last_modified_by": item.get("last_editor_email"),   # optional
         "content": content,
-        "custom_attributes": {},                             # optional — add any extra metadata here
+        "custom_attributes": {},                             # optional. Add any extra metadata here
     }
 
 
@@ -667,7 +794,7 @@ def _error_response(http_code: int, code: str, message: str) -> Response:
 @app.before_request
 def validate_auth():
     if not GATEWAY_API_KEY:
-        return  # GATEWAY_API_KEY not set — skipping auth (useful for local dev)
+        return  # GATEWAY_API_KEY not set. Skipping auth (useful for local dev)
 
     authorization = request.headers.get("Authorization", "")
     token = authorization.removeprefix("Bearer ").strip()
@@ -677,12 +804,27 @@ def validate_auth():
 
 @app.after_request
 def add_rate_limit_headers(response: Response) -> Response:
-    # These headers tell Moveworks about your rate limit.
-    # TODO: Replace with real values if you are enforcing a rate limit.
-    # If you add rate limiting (e.g. Flask-Limiter), update these to reflect actual usage.
-    response.headers["X-RateLimit-Limit"] = "600"
-    response.headers["X-RateLimit-Remaining"] = "599"
-    response.headers["X-RateLimit-Reset"] = "60"
+    # Rate-limit headers are how you tell Moveworks how fast it can call your
+    # gateway. Moveworks reads these headers on every response and proactively
+    # slows down its call rate when your remaining capacity drops below ~30% -
+    # no need to wait until you have to return a 429.
+    #
+    # IMPORTANT: emitting static placeholder values is worse than emitting
+    # nothing at all. If you advertise "599 of 600 remaining" on every response,
+    # Moveworks reads "plenty of headroom" and never slows down. Even when
+    # your backend is overloaded. The headers are deliberately commented out
+    # below so a default deployment doesn't accidentally advertise unlimited
+    # capacity.
+    #
+    # When you DO have a real rate limit (Flask-Limiter, AWS API Gateway
+    # throttling, source-system quota, etc.), uncomment the lines below and
+    # update the values per response to reflect your actual current capacity.
+    # Common header-name variants (`X-Rate-Limit-*`, `RateLimit-*` per RFC 9456)
+    # are also recognized.
+
+    # response.headers["X-RateLimit-Limit"]     = str(your_per_minute_limit)
+    # response.headers["X-RateLimit-Remaining"] = str(your_remaining_budget)
+    # response.headers["X-RateLimit-Reset"]     = str(seconds_until_reset)
     return response
 
 
@@ -700,6 +842,8 @@ def list_files() -> Response:
 
     body: dict = {
         "@odata.context": _odata_context_url("Content"),
+        # HTML body is intentionally omitted from list responses. Moveworks
+        # re-fetches it via /files/{id}. See map_item_to_node docstring.
         "value": [map_item_to_node(item) for item in items],
     }
     if has_more:
@@ -730,7 +874,7 @@ def get_file_metadata(file_id: str) -> Response:
 
     body = {
         "@odata.context": _odata_context_url("Content"),
-        "value": map_item_to_node(item),
+        "value": map_item_to_node(item, include_html_body=True),
     }
     return make_response(jsonify(body), 200)
 
