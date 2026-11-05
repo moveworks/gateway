@@ -148,13 +148,39 @@ def get_file_metadata(file_id: str) -> Response:
 
 @files_bp.route("/files/<file_id>/download", methods=["GET"])
 def download_file(file_id: str) -> Response:
-    directory_path = "./sample-content"
-    filename = f"{file_id}.pdf"
+    directory_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sample-content")
+
+    # IDs are base64 of "<index>_<sample file name>", e.g. "1_150_kb.pdf" → serve "150_kb.pdf".
+    try:
+        decoded = base64.b64decode(file_id, validate=True).decode()
+    except ValueError:
+        return create_error_response(400, "INVALID_FILE_ID", f"File ID {file_id} is not valid base64.")
+    filename = decoded.split("_", 1)[-1]
 
     if not os.path.isfile(os.path.join(directory_path, filename)):
         return create_error_response(404, "FILE_NOT_FOUND", f"File {filename} not found in {directory_path}.")
 
     return send_from_directory(directory_path, filename, as_attachment=True, mimetype="application/octet-stream")
+
+
+@app.route("/", methods=["GET"])
+def index() -> Response:
+    sample_name = f"1_{next(iter(_FILE_NAME_TO_PROPORTION))}"
+    sample_id = base64.b64encode(sample_name.encode()).decode()
+    endpoints = [
+        ("/v1/files", "List files (first page)"),
+        ("/v1/files?$top=10", "List files (10 per page)"),
+        ("/v1/files?$skip=1000&$top=10", "List files (paginated, offset 1000)"),
+        (f"/v1/files/{sample_name}", "File metadata (sample)"),
+        (f"/v1/files/{sample_id}/download", "File download (sample)"),
+    ]
+    items = "".join(f'<li><a href="{path}">{path}</a> — {desc}</li>' for path, desc in endpoints)
+    return make_response(
+        f"<h1>Content Gateway — Load Testing Server</h1>"
+        f"<p>Generating {_FILE_LIMIT:,} synthetic documents.</p>"
+        f"<ul>{items}</ul>",
+        200,
+    )
 
 
 app.register_blueprint(files_bp, url_prefix="/v1")
